@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { app, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
+import { app, dialog, protocol, session, Session, systemPreferences, WebFrameMain } from 'electron';
 import { addUNCHostToAllowlist, disableUNCAccessRestrictions } from '../../base/node/unc.js';
 import { validatedIpcMain } from '../../base/parts/ipc/electron-main/ipcMain.js';
 import { hostname, release } from 'os';
@@ -122,6 +122,7 @@ import { NativeMcpDiscoveryHelperService } from '../../platform/mcp/node/nativeM
 import { IWebContentExtractorService } from '../../platform/webContentExtractor/common/webContentExtractor.js';
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
+import { massageMessageBoxOptions } from '../../platform/dialogs/common/dialogs.js';
 
 /**
  * The main VS Code application. There will only ever be one instance,
@@ -608,6 +609,16 @@ export class CodeApplication extends Disposable {
 
 		// Post Open Windows Tasks
 		this.afterWindowOpen();
+
+		// macOS: detect non-standard app installation
+		if (isMacintosh && !app.isInApplicationsFolder()) {
+			// Only offer to move to Applications folder under the following scenarios:
+			// * Application was not launched from the cli
+			// * Application is not running in portable mode
+			if (!isLaunchedFromCli(process.env) && !process.env['VSCODE_PORTABLE']) {
+				await appInstantiationService.invokeFunction(accessor => this.moveToApplicationsFolder(accessor));
+			}
+		}
 
 		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
 		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {
@@ -1470,5 +1481,50 @@ export class CodeApplication extends Disposable {
 		// Validate Device ID is up to date (delay this as it has shown significant perf impact)
 		// Refs: https://github.com/microsoft/vscode/issues/234064
 		validatedevDeviceId(this.stateService, this.logService);
+	}
+
+	private async moveToApplicationsFolder(accessor: ServicesAccessor): Promise<void> {
+		const dialogMainService = accessor.get(IDialogMainService);
+
+		const { response } = await dialogMainService.showMessageBox({
+			type: 'info',
+			buttons: [
+				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications folder"),
+				localize({ key: 'doNotMove', comment: ['&& denotes a mnemonic'] }, "&&Cancel")
+			],
+			message: localize('moveToApplicationsFolderWarning', "Current version of {0} is installed outside the Applications folder, would you like to move it ?", this.productService.nameLong),
+			checkboxLabel: localize('remember', "Do not ask again"),
+			cancelId: 1
+		});
+
+		if (response === 0) {
+			try {
+				const result = app.moveToApplicationsFolder({
+					conflictHandler: conflictType => {
+						if (conflictType === 'exists') {
+							const response = dialog.showMessageBoxSync(massageMessageBoxOptions({
+								type: 'warning',
+								buttons: [
+									localize({ key: 'continue', comment: ['&& denotes a mnemonic'] }, "&&Yes"),
+									localize({ key: 'cancel', comment: ['&& denotes a mnemonic'] }, "&&No")
+								],
+								message: localize('applicationAlreadyExists', "A version of {0} already exists inside the Applications folder, would you like to replace it ?", this.productService.nameLong),
+								detail: localize('applicationAlreadyExistsDetail', "Continuing this step would proceed to replace the version inside the Applications folder"),
+								cancelId: 1
+							}, this.productService).options);
+							return (response === 0);
+						}
+						// No action needed when conflictType === existsAndRunning, since
+						// our singleton logic would attach to running application when using same user-data-dir.
+						// Different user-data-dir requires launching from cli in which case the detection would
+						// never happen.
+						return false;
+					}
+				});
+				this.logService.trace(`update#moveToApplicationsFolder: ${result ? 'success' : 'failed'}.`);
+			} catch (error) {
+				this.logService.trace(`update#moveToApplicationsFolder: failed with ${toErrorMessage(error)}`);
+			}
+		}
 	}
 }
