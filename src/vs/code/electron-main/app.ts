@@ -1486,7 +1486,7 @@ export class CodeApplication extends Disposable {
 	}
 
 	private async moveToApplicationsFolder(): Promise<void> {
-		const { options, buttonIndeces } = massageMessageBoxOptions({
+		const { response } = await dialog.showMessageBox(massageMessageBoxOptions({
 			type: 'info',
 			buttons: [
 				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications"),
@@ -1494,10 +1494,9 @@ export class CodeApplication extends Disposable {
 			],
 			message: localize('moveToApplicationsFolderWarning', "{0} works best when run from the Applications folder", this.productService.nameLong),
 			cancelId: 1
-		}, this.productService);
-		const result = await dialog.showMessageBox(options);
+		}, this.productService).options);
 
-		if (buttonIndeces[result.response] === 0) {
+		if (response === 0) {
 			try {
 				const result = app.moveToApplicationsFolder({
 					conflictHandler: conflictType => {
