@@ -66,6 +66,7 @@ export abstract class HeaderBase<
 				continue;
 			}
 
+			// TODO: @legomushroom - add reason comment
 			Object.assign(result, {
 				[entryName]: entryValue.value,
 			});

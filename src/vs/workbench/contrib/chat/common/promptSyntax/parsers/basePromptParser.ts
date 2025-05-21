@@ -22,6 +22,7 @@ import type { TPromptReference, IResolveError, ITopError } from './types.js';
 import { IRange, Range } from '../../../../../../editor/common/core/range.js';
 import { assert, assertNever } from '../../../../../../base/common/assert.js';
 import { basename, dirname } from '../../../../../../base/common/resources.js';
+import { INSTRUCTIONS_LANGUAGE_ID, PROMPT_LANGUAGE_ID } from '../constants.js';
 import { BaseToken } from '../../../../../../editor/common/codecs/baseToken.js';
 import { VSBufferReadableStream } from '../../../../../../base/common/buffer.js';
 import { PromptHeader, type TPromptMetadata } from './promptHeader/promptHeader.js';
@@ -347,12 +348,7 @@ export class BasePromptParser<TContentsProvider extends IPromptContentsProvider>
 
 			// if a prompt header token received, create a new prompt header instance
 			if (token instanceof FrontMatterHeader) {
-				this.promptHeader = new PromptHeader(
-					token.contentToken,
-					this.promptContentsProvider.languageId,
-				).start();
-
-				return;
+				return this.createHeader(token);
 			}
 
 			// try to convert a prompt variable with data token into a file reference
@@ -383,6 +379,22 @@ export class BasePromptParser<TContentsProvider extends IPromptContentsProvider>
 
 		// start receiving data on the stream
 		this.stream.start();
+	}
+
+	/**
+	 * TODO: @legomushroom
+	 */
+	private createHeader(header: FrontMatterHeader): void {
+		const { languageId } = this.promptContentsProvider;
+
+		if (languageId === PROMPT_LANGUAGE_ID) {
+			this.promptHeader = new PromptHeader(header.contentToken, languageId);
+		}
+		if (languageId === INSTRUCTIONS_LANGUAGE_ID) {
+			this.promptHeader = new InstructionsHeader(header.contentToken, languageId);
+		}
+
+		this.promptHeader?.start();
 	}
 
 	/**
@@ -585,11 +597,21 @@ export class BasePromptParser<TContentsProvider extends IPromptContentsProvider>
 			? ChatMode.Agent
 			: mode;
 
-		return {
-			tools,
-			description,
-			mode: resultingMode,
-		};
+		const result: Partial<TPromptMetadata> = {};
+
+		if (description !== undefined) {
+			result.description = description;
+		}
+
+		if (tools !== undefined) {
+			result.tools = tools;
+		}
+
+		if (resultingMode !== undefined) {
+			result.mode = resultingMode;
+		}
+
+		return result;
 	}
 
 	/**
