@@ -610,16 +610,6 @@ export class CodeApplication extends Disposable {
 		// Post Open Windows Tasks
 		this.afterWindowOpen();
 
-		// macOS: detect non-standard app installation
-		if (isMacintosh && !app.isInApplicationsFolder()) {
-			// Only offer to move to Applications folder under the following scenarios:
-			// * Application was not launched from the cli
-			// * Application is not running in portable mode
-			if (!isLaunchedFromCli(process.env) && !process.env['VSCODE_PORTABLE']) {
-				await appInstantiationService.invokeFunction(accessor => this.moveToApplicationsFolder(accessor));
-			}
-		}
-
 		// Set lifecycle phase to `Eventually` after a short delay and when idle (min 2.5sec, max 5sec)
 		const eventuallyPhaseScheduler = this._register(new RunOnceScheduler(() => {
 			this._register(runWhenGlobalIdle(() => {
@@ -1396,9 +1386,21 @@ export class CodeApplication extends Disposable {
 		// Crash reporter
 		this.updateCrashReporterEnablement();
 
-		// macOS: rosetta translation warning
-		if (isMacintosh && app.runningUnderARM64Translation) {
-			this.windowsMainService?.sendToFocused('vscode:showTranslatedBuildWarning');
+		if (isMacintosh) {
+			// macOS: rosetta translation warning
+			if (app.runningUnderARM64Translation) {
+				this.windowsMainService?.sendToFocused('vscode:showTranslatedBuildWarning');
+			}
+
+			// macOS: detect non-standard app installation
+			if (!app.isInApplicationsFolder()) {
+				// Only offer to move to Applications folder under the following scenarios:
+				// * Application was not launched from the cli
+				// * Application is not running in portable mode
+				if (!isLaunchedFromCli(process.env) && !process.env['VSCODE_PORTABLE']) {
+					this.moveToApplicationsFolder();
+				}
+			}
 		}
 	}
 
@@ -1483,21 +1485,19 @@ export class CodeApplication extends Disposable {
 		validatedevDeviceId(this.stateService, this.logService);
 	}
 
-	private async moveToApplicationsFolder(accessor: ServicesAccessor): Promise<void> {
-		const dialogMainService = accessor.get(IDialogMainService);
-
-		const { response } = await dialogMainService.showMessageBox({
+	private async moveToApplicationsFolder(): Promise<void> {
+		const { options, buttonIndeces } = massageMessageBoxOptions({
 			type: 'info',
 			buttons: [
-				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications folder"),
-				localize({ key: 'doNotMove', comment: ['&& denotes a mnemonic'] }, "&&Cancel")
+				localize({ key: 'move', comment: ['&& denotes a mnemonic'] }, "&&Move to Applications"),
+				localize({ key: 'doNotMove', comment: ['&& denotes a mnemonic'] }, "&&Do not Move")
 			],
-			message: localize('moveToApplicationsFolderWarning', "Current version of {0} is installed outside the Applications folder, would you like to move it ?", this.productService.nameLong),
-			checkboxLabel: localize('remember', "Do not ask again"),
+			message: localize('moveToApplicationsFolderWarning', "{0} works best when run from the Applications folder", this.productService.nameLong),
 			cancelId: 1
-		});
+		}, this.productService);
+		const result = await dialog.showMessageBox(options);
 
-		if (response === 0) {
+		if (buttonIndeces[result.response] === 0) {
 			try {
 				const result = app.moveToApplicationsFolder({
 					conflictHandler: conflictType => {
@@ -1505,19 +1505,20 @@ export class CodeApplication extends Disposable {
 							const response = dialog.showMessageBoxSync(massageMessageBoxOptions({
 								type: 'warning',
 								buttons: [
-									localize({ key: 'continue', comment: ['&& denotes a mnemonic'] }, "&&Yes"),
-									localize({ key: 'cancel', comment: ['&& denotes a mnemonic'] }, "&&No")
+									localize({ key: 'continue', comment: ['&& denotes a mnemonic'] }, "&&Replace in Applications"),
+									localize({ key: 'doNotMove', comment: ['&& denotes a mnemonic'] }, "&&Do not Move")
 								],
-								message: localize('applicationAlreadyExists', "A version of {0} already exists inside the Applications folder, would you like to replace it ?", this.productService.nameLong),
-								detail: localize('applicationAlreadyExistsDetail', "Continuing this step would proceed to replace the version inside the Applications folder"),
+								message: localize('applicationAlreadyExists', "Another version of of {0} already exists in the Applications folder. Would you like to replace it?", this.productService.nameLong),
 								cancelId: 1
 							}, this.productService).options);
+							this.logService.trace(`update#moveToApplicationsFolder: received ${response} to replace existing version.`);
 							return (response === 0);
 						}
 						// No action needed when conflictType === existsAndRunning, since
 						// our singleton logic would attach to running application when using same user-data-dir.
 						// Different user-data-dir requires launching from cli in which case the detection would
 						// never happen.
+						this.logService.trace(`update#moveToApplicationsFolder: not performing move operation for conflictType ${conflictType}.`);
 						return false;
 					}
 				});
