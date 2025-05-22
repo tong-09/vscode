@@ -15,7 +15,7 @@ import { getPathLabel } from '../../base/common/labels.js';
 import { Disposable, DisposableStore } from '../../base/common/lifecycle.js';
 import { Schemas, VSCODE_AUTHORITY } from '../../base/common/network.js';
 import { join, posix } from '../../base/common/path.js';
-import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS } from '../../base/common/platform.js';
+import { IProcessEnvironment, isLinux, isLinuxSnap, isMacintosh, isWindows, OS, isCI } from '../../base/common/platform.js';
 import { assertType } from '../../base/common/types.js';
 import { URI } from '../../base/common/uri.js';
 import { generateUuid } from '../../base/common/uuid.js';
@@ -1397,7 +1397,11 @@ export class CodeApplication extends Disposable {
 				// Only offer to move to Applications folder under the following scenarios:
 				// * Application was not launched from the cli
 				// * Application is not running in portable mode
-				if (!isLaunchedFromCli(process.env) && !process.env['VSCODE_PORTABLE']) {
+				// * Application is not running in an CI environment
+				// * Application was not launched with --disable-app-install-dir-detection
+				const should_move = !this.environmentMainService.disableAppInstallDirDetection &&
+					!isCI && !isLaunchedFromCli(process.env) && !process.env['VSCODE_PORTABLE'];
+				if (should_move) {
 					this.moveToApplicationsFolder();
 				}
 			}
