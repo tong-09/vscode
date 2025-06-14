@@ -1,0 +1,14 @@
+{
+  "name": "dev",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.tabSize": 2
+      }
+    }
+  },
+  "remoteUser": "vscode"
+}
