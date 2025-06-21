@@ -20,7 +20,7 @@ logging.basicConfig(
 LOGIN_PAGE = "https://nic.eu.org/arf/en/login/"
 LOGIN_URL = "https://nic.eu.org/arf/en/login/?next=/arf/en/"
 HANDLE = "JA110-FREE"
-PASSWORD_FILE = "rockyou.txt"
+PASSWORD_FILE = "common.txt"
 FOUND_FLAG = "final.txt"
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/116.0.0.0 Safari/537.36"
 
